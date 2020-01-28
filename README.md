@@ -1,4 +1,4 @@
-# druid-cleanup-service
+# druid-cleanup
 
 Service for cleaning the local disk from indexed native-batch files and scheduled submit a kill task for permanently delete data from druid cluster after dropping segments. 
 
