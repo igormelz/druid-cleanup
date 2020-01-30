@@ -38,11 +38,15 @@ public class CleanupSegmentsRoute extends RouteBuilder {
         fromF("timer:cleanup?period=%s", period).id("CleanupSegments")
             .log("Starting cleanup dropped segmenets")
             
-            // select dropped segements from metastore
-            .setBody(constant("select max(\"end\"),min(\"start\"),count(id),datasource from druid_segments"
-                        + " where used=false group by datasource"))
-            .to("jdbc:datasource")
-                
+            .step("getTask")
+                // select dropped segements from metastore
+                .setBody(constant("select max(\"end\"),min(\"start\"),count(id),datasource"
+                        + " from druid_segments"
+                        + " where used=false "
+                        + " group by datasource"))
+                .to("jdbc:datasource")
+            .end()
+
             // process payload
             .split(body())
                 // format kill task 
@@ -56,28 +60,32 @@ public class CleanupSegmentsRoute extends RouteBuilder {
                     return null;
                 })
                 .filter(body().isNotNull())
-                    // post task 
-                    .log("Posting kill task: ${body}")
-                    .removeHeaders("(?:Camel.*)|(?:job.*)|(?:.*Job.*)")
-                    .setHeader("Content-Type", constant("application/json"))
-                    .toF("netty-http:%s/druid/indexer/v1/task?httpMethod=POST&copyHeaders=false&mapHttpMessageHeaders=false", druid)
-                    
-                    // parse task id
-                    .setHeader("task").jsonpath("$.task")
-                    .log("Task id: ${header.task}")
+                    .step("postTask")
+                        .log("Posting kill task: ${body}")
+                        .removeHeaders("(?:Camel.*)|(?:job.*)|(?:.*Job.*)")
+                        .setHeader("Content-Type", constant("application/json"))
+                        .toF("netty-http:%s/druid/indexer/v1/task?httpMethod=POST", druid)
+                    .end()
+
+                    .step("parseTask")
+                        .setHeader("task").jsonpath("$.task")
+                        .log("Task id: ${header.task}")
+                    .end()
 
                     // monitor task status
                     .loopDoWhile(and(header("task").isNotNull(),header("status").isNotEqualTo("SUCCESS")))
-                        // request task status
-                        .setHeader("CamelHttpPath").simple("/druid/indexer/v1/task/${header.task}/status")
-                        .setBody(constant(null))
-                        .toF("netty-http:%s", druid)
-                
-                        // parse status
-                        .setHeader("status").jsonpath("$.status.status")
-                        .setHeader("task").jsonpath("$.status.id")
-                        .log("${header.status} -- ${header.task}")
-                        
+                        .step("getStatus")
+                            .setHeader("CamelHttpPath").simple("/druid/indexer/v1/task/${header.task}/status")
+                            .setBody(constant(null))
+                            .toF("netty-http:%s", druid)
+                        .end()
+
+                        .step("parseStatus")
+                            .setHeader("status").jsonpath("$.status.status")
+                            .setHeader("task").jsonpath("$.status.id")
+                            .log("${header.status} -- ${header.task}")
+                        .end()
+
                         // wait 3 seconds
                         .delay(3000)
                     .end()
