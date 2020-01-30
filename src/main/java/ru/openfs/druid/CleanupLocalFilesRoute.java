@@ -65,7 +65,10 @@ public class CleanupLocalFilesRoute extends RouteBuilder {
                     .setBody(simple("delete from druid_tasks where id='${headers.task}'"))
                     .to("jdbc:datasource?outputType=SelectOne")
                 .end()
-            .end();
+            .end()
+            
+            .log("Deleted file:${file:name}")
+            ;
            
     }
 }

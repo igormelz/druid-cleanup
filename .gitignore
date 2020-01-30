@@ -15,6 +15,7 @@ nb-configuration.xml
 
 # Visual Studio Code
 .vscode
+.sts4-cache
 
 # OSX
 .DS_Store

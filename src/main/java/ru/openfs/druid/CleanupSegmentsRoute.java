@@ -22,28 +22,30 @@ import javax.enterprise.context.ApplicationScoped;
 import org.apache.camel.builder.RouteBuilder;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import static org.apache.camel.builder.PredicateBuilder.and;
+
 @ApplicationScoped
 public class CleanupSegmentsRoute extends RouteBuilder {
 
-    @ConfigProperty(name = "cleanup.period", defaultValue = "1h")
+    @ConfigProperty(name = "period")
     String period;
 
-    @ConfigProperty(name = "cleanup.druidUrl", defaultValue = "http://localhost:8081")
+    @ConfigProperty(name = "coordinator.url")
     String druid;
 
     @Override
     public void configure() throws Exception {
         fromF("timer:cleanup?period=%s", period).id("CleanupSegments")
-            .log("Starting cleanup segmenets")
+            .log("Starting cleanup dropped segmenets")
             
-            // select not used segements from meta store
+            // select dropped segements from metastore
             .setBody(constant("select max(\"end\"),min(\"start\"),count(id),datasource from druid_segments"
                         + " where used=false group by datasource"))
             .to("jdbc:datasource")
                 
             // process payload
             .split(body())
-                // process values to json string task
+                // format kill task 
                 .setBody().body(Map.class, (b) -> {
                     @SuppressWarnings("unchecked")
                     Map<String, Object> values = (Map<String, Object>) b;
@@ -55,20 +57,34 @@ public class CleanupSegmentsRoute extends RouteBuilder {
                 })
                 .filter(body().isNotNull())
                     // post task 
-                    .log("Posting task: ${body}")
+                    .log("Posting kill task: ${body}")
                     .removeHeaders("(?:Camel.*)|(?:job.*)|(?:.*Job.*)")
                     .setHeader("Content-Type", constant("application/json"))
                     .toF("netty-http:%s/druid/indexer/v1/task?httpMethod=POST&copyHeaders=false&mapHttpMessageHeaders=false", druid)
-                    .log("Register task: ${body}")
+                    
+                    // parse task id
+                    .setHeader("task").jsonpath("$.task")
+                    .log("Task id: ${header.task}")
+
+                    // monitor task status
+                    .loopDoWhile(and(header("task").isNotNull(),header("status").isNotEqualTo("SUCCESS")))
+                        // request task status
+                        .setHeader("CamelHttpPath").simple("/druid/indexer/v1/task/${header.task}/status")
+                        .setBody(constant(null))
+                        .toF("netty-http:%s", druid)
                 
-                    // get status
-                    .setHeader("taskid").jsonpath("$.task")
-                    .setHeader("CamelHttpPath").simple("/druid/indexer/v1/task/${header.taskid}/status")
-                    .log("path:${header.CamelHttpPath}")
-                    .toF("netty-http:%s?httpMethod=GET", druid)
-                    .setBody().jsonpath("$.status.status")
-                    .log("task status: ${body}")
+                        // parse status
+                        .setHeader("status").jsonpath("$.status.status")
+                        .setHeader("task").jsonpath("$.status.id")
+                        .log("${header.status} -- ${header.task}")
+                        
+                        // wait 3 seconds
+                        .delay(3000)
+                    .end()
                 .end()
+                
+                .log("End cleanup dropped segmenets")
             .end();
+
     }
 }
