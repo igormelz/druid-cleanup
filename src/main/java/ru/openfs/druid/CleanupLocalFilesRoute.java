@@ -25,38 +25,47 @@ import static org.apache.camel.builder.PredicateBuilder.and;
 @ApplicationScoped
 public class CleanupLocalFilesRoute extends RouteBuilder {
 
-    @ConfigProperty(name = "cleanup.logs.dir")
-    String logsDir;
+    @ConfigProperty(name = "logs.dir")
+    String dir;
 
-    @ConfigProperty(name = "cleanup.logs.delay", defaultValue = "5m30s")
-    String logsDelay;
+    @ConfigProperty(name = "logs.delay")
+    String delay;
 
     @Override
     public void configure() throws Exception {
 
-        fromF("file:%s?delete=true&sortBy=file:name&delay=%s", logsDir, logsDelay)
-        .id("CleanupLocalFiles")
-        .log("Setting next indexing-log to:${file:name}")
-        // process log file
-        .filter(header("CamelFileName").regex("^index.*.log"))
-            // extract task id
-			.setHeader("task",header("CamelFileName").regexReplaceAll(".log", ""))
-            .log("process task:${header.task}")
-            // get payload 
-			.setBody(simple("select encode(payload,'escape') from druid_tasks where id='${headers.task}'"))
-            .to("jdbc:datasource?outputType=SelectOne")
-            // process payload
-            .filter(and(body().isNotNull(),jsonpath("spec.ioConfig.firehose.type").isEqualTo("local")))
-                .setHeader("localDir", jsonpath("spec.ioConfig.firehose.baseDir"))
-                .setHeader("localFile", jsonpath("spec.ioConfig.firehose.filter"))
-                .log("try to remove ${header.localFile} from ${header.localDir}")
-                // remove dir
-                .toD("exec:/usr/bin/rm?args=-f ${header.localDir}/${header.localFile}")
-                // delete db task
-                .setBody(simple("delete from druid_tasks where id='${headers.task}'"))
+        fromF("file:%s?delete=true&sortBy=file:name&delay=%s", dir, delay).id("CleanupLocalFiles")
+            .log("Setting next file to:${file:name}")
+        
+            // process log file
+            .filter(header("CamelFileName").regex("^index.*.log"))
+                // extract task id from filename
+			    .setHeader("task",header("CamelFileName").regexReplaceAll(".log", ""))
+                .log("process task id:${header.task}")
+                
+                // get task payload from metastore 
+			    .setBody(simple("select encode(payload,'escape') from druid_tasks where id='${headers.task}'"))
                 .to("jdbc:datasource?outputType=SelectOne")
-            .end()
-        .end();
+            
+                // process task payload
+                .filter(and(body().isNotNull(),jsonpath("spec.ioConfig.firehose.type").isEqualTo("local")))
+                    
+                    // parse baseDir from payload 
+                    .setHeader("localDir", jsonpath("spec.ioConfig.firehose.baseDir"))
+                    
+                    // parse filename from payload 
+                    .setHeader("localFile", jsonpath("spec.ioConfig.firehose.filter"))
+                    
+                    .log("try to remove file:${header.localFile} from ${header.localDir}")
+                    
+                    // call system remove file 
+                    .toD("exec:/usr/bin/rm?args=-f ${header.localDir}/${header.localFile}")
+                    
+                    // delete task from metastore
+                    .setBody(simple("delete from druid_tasks where id='${headers.task}'"))
+                    .to("jdbc:datasource?outputType=SelectOne")
+                .end()
+            .end();
            
     }
 }
