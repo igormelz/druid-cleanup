@@ -27,72 +27,45 @@ import static org.apache.camel.builder.PredicateBuilder.and;
 @ApplicationScoped
 public class CleanupSegmentsRoute extends RouteBuilder {
 
-    @ConfigProperty(name = "period")
+    @ConfigProperty(name = "cleanup.segments.period")
     String period;
 
-    @ConfigProperty(name = "coordinator.url")
+    @ConfigProperty(name = "cleanup.coordinator.url")
     String druid;
+
+    @ConfigProperty(name = "cleanup.segments.enable", defaultValue = "true")
+    boolean isEnable;
 
     @Override
     public void configure() throws Exception {
-        fromF("timer:cleanup?period=%s", period).id("CleanupSegments")
-            .log("Starting cleanup dropped segmenets")
+
+        // cleanup segments 
+        fromF("timer:segments?period=%s", period).autoStartup(isEnable).id("CleanupSegments")
+            .log("Starting cleanup unused segments")
             
-            .step("getTask")
-                // select dropped segements from metastore
-                .setBody(constant("select max(\"end\"),min(\"start\"),count(id),datasource"
-                        + " from druid_segments"
-                        + " where used=false "
-                        + " group by datasource"))
-                .to("jdbc:datasource")
-            .end()
+            // select dropped segements from metastore
+            .setBody(constant("select max(\"end\"),min(\"start\"),count(id),datasource"
+                + " from druid_segments where used=false group by datasource"))
+            .to("jdbc:datasource")
 
             // process payload
             .split(body())
-                // format kill task 
-                .setBody().body(Map.class, (b) -> {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> values = (Map<String, Object>) b;
-                    if (!values.get("count").toString().equalsIgnoreCase("0")) {
-                        return String.format("{\"type\":\"kill\",\"dataSource\":\"%s\",\"interval\":\"%s/%s\"}",
-                                values.get("datasource"), values.get("min"), values.get("max"));
-                    }
-                    return null;
-                })
-                .filter(body().isNotNull())
-                    .step("postTask")
-                        .log("Posting kill task: ${body}")
-                        .removeHeaders("(?:Camel.*)|(?:job.*)|(?:.*Job.*)")
-                        .setHeader("Content-Type", constant("application/json"))
-                        .toF("netty-http:%s/druid/indexer/v1/task?httpMethod=POST", druid)
-                    .end()
-
-                    .step("parseTask")
-                        .setHeader("task").jsonpath("$.task")
-                        .log("Task id: ${header.task}")
-                    .end()
-
-                    // monitor task status
-                    .loopDoWhile(and(header("task").isNotNull(),header("status").isNotEqualTo("SUCCESS")))
-                        .step("getStatus")
-                            .setHeader("CamelHttpPath").simple("/druid/indexer/v1/task/${header.task}/status")
-                            .setBody(constant(null))
-                            .toF("netty-http:%s", druid)
-                        .end()
-
-                        .step("parseStatus")
-                            .setHeader("status").jsonpath("$.status.status")
-                            .setHeader("task").jsonpath("$.status.id")
-                            .log("${header.status} -- ${header.task}")
-                        .end()
-
-                        // wait 3 seconds
-                        .delay(3000)
-                    .end()
+                .filter(simple("${body.get('count')} > 0"))
+                    .setBody()
+                        .simple("{\"type\":\"kill\",\"dataSource\":\"${body.get('datasource')}\",\"interval\":\"${body.get('min')}/${body.get('max')}\"}")
+                    
+                    // post task
+                    .log("try to post kill task:${body}")
+                    .removeHeaders("(?:Camel.*)|(?:job.*)|(?:.*Job.*)")
+                    .setHeader("Content-Type", constant("application/json"))
+                    .toF("netty-http:%s/druid/indexer/v1/task?httpMethod=POST", druid)
+                    
+                    // parse id
+                    .setHeader("task").jsonpath("$.task")
+                    .log("commit task:${header.task}")
                 .end()
-                
-                .log("End cleanup dropped segmenets")
-            .end();
+            .end()
+            .log("Cleanup unused segments finished");
 
     }
 }
