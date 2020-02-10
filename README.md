@@ -1,12 +1,12 @@
 # druid-cleanup
 
-Service for cleaning the local disk from indexed native-batch files and scheduled submit a kill task for permanently delete data from druid cluster after dropping segments. 
+Utility service for scheduled cleaning the local disk from ingested batch files and permanently delete data from druid cluster for retention segments. 
 
 ### Prerequisites
 
 * JDK 1.8+
 * Maven 3.5.3+ 
-* Druid metadata storage on PostgreSQL (for MySQL see [configure](#configure-MySQL))
+* Druid metadata storage on PostgreSQL
 
 ### Build
 
@@ -21,9 +21,10 @@ Service for cleaning the local disk from indexed native-batch files and schedule
 # java -jar target/*-running.jar
 ```
 
-## Deployment
+## Deployment 
 
-Add additional notes about how to deploy this on a live system
+* Must running on the same host that running indexing task. 
+* Use options in `application.properties` to configure druid datastore connection, path to indexing-log and set period to run cleanup task.  
 
 ## Built With
 
@@ -33,5 +34,5 @@ Add additional notes about how to deploy this on a live system
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details
+This project is licensed under the Apache 2.0 License - see the [LICENSE](LICENSE) file for details
 
