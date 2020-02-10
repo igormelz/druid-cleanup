@@ -15,14 +15,9 @@
  */
 package ru.openfs.druid;
 
-import java.util.Map;
-
 import javax.enterprise.context.ApplicationScoped;
-
 import org.apache.camel.builder.RouteBuilder;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
-
-import static org.apache.camel.builder.PredicateBuilder.and;
 
 @ApplicationScoped
 public class CleanupSegmentsRoute extends RouteBuilder {

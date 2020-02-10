@@ -16,11 +16,8 @@
 package ru.openfs.druid;
 
 import javax.enterprise.context.ApplicationScoped;
-
 import org.apache.camel.builder.RouteBuilder;
-import org.apache.camel.component.exec.ExecBinding;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
-
 
 @ApplicationScoped
 public class CleanupTaskRoute extends RouteBuilder {
