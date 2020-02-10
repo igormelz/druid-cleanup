@@ -37,8 +37,8 @@ public class CleanupTaskRoute extends RouteBuilder {
     @Override
     public void configure() throws Exception {
 
-        // cleanup segments 
-        fromF("timer:taks?period=%s&repeatCount=1", period).autoStartup(isEnable).id("CleanupTask")
+        // cleanup task 
+        fromF("timer:taks?period=%s", period).autoStartup(isEnable).id("CleanupTask")
             .log("Starting cleanup indexing task")
             
             .step("getTasks")
