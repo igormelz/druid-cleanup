@@ -39,13 +39,15 @@ public class CleanupTaskRoute extends RouteBuilder {
             .log("Starting cleanup indexing task")
             
             .step("getTasks")
-                // select inactive tasks segements from metastore
+                // select inactive tasks segements from meta for time period ago
                 .setBody().
                     constant("select id,"
                     +" encode(status_payload,'escape')::json->>'status' as status,"
                     +" encode(payload,'escape')::json->>'type' as type,"
                     +" encode(payload,'escape') as payload"
-                    +" from druid_tasks where active=false")
+                    +" from druid_tasks"
+                    +" where active=false"
+                    +" and created_date::timestamp < now() at time zone 'UTC' - interval '"+period+"'")
                 .to("jdbc:datasource")
             .end()
 
