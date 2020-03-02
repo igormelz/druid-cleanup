@@ -16,6 +16,8 @@
 package ru.openfs.druid;
 
 import javax.enterprise.context.ApplicationScoped;
+
+import org.apache.camel.LoggingLevel;
 import org.apache.camel.builder.RouteBuilder;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -36,6 +38,12 @@ public class CleanupTaskRoute extends RouteBuilder {
 
         // cleanup task 
         fromF("timer:taks?period=%s", period).autoStartup(isEnable).id("CleanupTask")
+            // error  
+            .onException(Exception.class)
+                .handled(true)
+                .log(LoggingLevel.ERROR,"${body}:${exception.message}")
+            .end()
+
             .log("Starting cleanup indexing task")
             
             .step("getTasks")
@@ -43,7 +51,7 @@ public class CleanupTaskRoute extends RouteBuilder {
                 .setBody().
                     constant("select id,"
                     +" encode(status_payload,'escape')::json->>'status' as status,"
-                    +" encode(payload,'escape') as payload"
+                    +" regexp_replace(encode(payload,'escape'),',\"sha256OfSortedSegmentIds\".*\"}}','}}') as payload"
                     +" from druid_tasks"
                     +" where active=false"
                     +" and created_date::timestamp < now() at time zone 'UTC' - interval '"+period+"'")
