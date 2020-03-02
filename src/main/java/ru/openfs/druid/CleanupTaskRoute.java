@@ -43,7 +43,6 @@ public class CleanupTaskRoute extends RouteBuilder {
                 .setBody().
                     constant("select id,"
                     +" encode(status_payload,'escape')::json->>'status' as status,"
-                    +" encode(payload,'escape')::json->>'type' as type,"
                     +" encode(payload,'escape') as payload"
                     +" from druid_tasks"
                     +" where active=false"
@@ -55,12 +54,12 @@ public class CleanupTaskRoute extends RouteBuilder {
                 // parse body to headers
                 .setHeader("id").simple("${body.get('id')}")
                 .setHeader("status").simple("${body.get('status')}")
-                .setHeader("type").simple("${body.get('type')}")
                 .setHeader("payload").simple("${body.get('payload')}")
-            
+                
                 // process success task
                 .filter(header("status").isEqualTo("SUCCESS"))
                     .log("Starting cleanup task:${header.id}")
+                    .setHeader("type").jsonpath("type",false,String.class,"payload")
                     
                     // process ingested files 
                     .filter(header("type").isEqualTo("index"))
